@@ -64,9 +64,21 @@ def get_discord_id_by_telegram(telegram_id: str) -> str:
 def link_accounts(discord_id: str, telegram_id: str):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute('UPDATE premium_users SET telegram_id = ? WHERE discord_id = ?', (telegram_id, discord_id))
+    
+    c.execute('SELECT telegram_id FROM premium_users WHERE discord_id = ?', (discord_id,))
+    row = c.fetchone()
+    
+    if row:
+        c.execute('UPDATE premium_users SET telegram_id = ? WHERE discord_id = ?', (telegram_id, discord_id))
+    else:
+        c.execute('''
+            INSERT INTO premium_users (discord_id, telegram_id, expires_at)
+            VALUES (?, ?, NULL)
+        ''', (discord_id, telegram_id))
+    
     conn.commit()
     conn.close()
+    print(f"🔗 Привязан Discord ID {discord_id} к Telegram ID {telegram_id}")
 
 def get_all_premium() -> list:
     conn = sqlite3.connect(DB_PATH)
