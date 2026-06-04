@@ -48,6 +48,7 @@ DB_PATH = "premium.db"
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
+    # Таблица подписок
     c.execute('''
         CREATE TABLE IF NOT EXISTS premium_users (
             discord_id TEXT PRIMARY KEY,
@@ -56,9 +57,30 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    # Таблица для рефералов
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS referrals (
+            discord_id TEXT PRIMARY KEY,
+            invited_by TEXT,
+            invited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    # Таблица для счётчиков запросов
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS request_counts (
+            discord_id TEXT PRIMARY KEY,
+            month TEXT,
+            count INTEGER DEFAULT 0,
+            bonus_requests INTEGER DEFAULT 0
+        )
+    ''')
     conn.commit()
     conn.close()
+    print("✅ База данных инициализирована")
 
+init_db()
+
+# ========== ФУНКЦИИ ПРЕМИУМА ==========
 def is_premium(discord_id: str) -> bool:
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -90,8 +112,120 @@ def set_premium(discord_id: str, days: int, telegram_id: str = None):
     ''', (discord_id, telegram_id, expires_at, days, telegram_id))
     conn.commit()
     conn.close()
+    print(f"✅ Премиум выдан Discord ID {discord_id} на {days} дней")
 
-init_db()
+def get_all_premium_users() -> list:
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT discord_id, expires_at FROM premium_users WHERE expires_at > ?', (datetime.now().isoformat(),))
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+# ========== ФУНКЦИИ РЕФЕРАЛОВ ==========
+def get_invited_by(discord_id: str) -> str:
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT invited_by FROM referrals WHERE discord_id = ?', (discord_id,))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+def add_referral(invited_id: str, inviter_id: str):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO referrals (discord_id, invited_by)
+        VALUES (?, ?)
+        ON CONFLICT(discord_id) DO NOTHING
+    ''', (invited_id, inviter_id))
+    conn.commit()
+    conn.close()
+    
+    # Выдаём бонусы: +14 дней премиума пригласившему
+    set_premium(inviter_id, 14)
+    # +5 бонусных запросов приглашённому
+    add_bonus_requests(invited_id, 5)
+    print(f"🎉 Реферал: {invited_id} приглашён {inviter_id}")
+
+def get_referral_count(discord_id: str) -> int:
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT COUNT(*) FROM referrals WHERE invited_by = ?', (discord_id,))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else 0
+
+def get_referral_list(discord_id: str) -> list:
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT discord_id, invited_at FROM referrals WHERE invited_by = ? ORDER BY invited_at DESC', (discord_id,))
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+# ========== ФУНКЦИИ ЗАПРОСОВ ==========
+def get_user_requests(discord_id: str) -> int:
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    current_month = datetime.now().strftime("%Y-%m")
+    c.execute('SELECT count, bonus_requests FROM request_counts WHERE discord_id = ? AND month = ?', (discord_id, current_month))
+    row = c.fetchone()
+    conn.close()
+    
+    if row:
+        return row[0], row[1]
+    return 0, 0
+
+def increment_requests(discord_id: str) -> int:
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    current_month = datetime.now().strftime("%Y-%m")
+    
+    c.execute('''
+        INSERT INTO request_counts (discord_id, month, count, bonus_requests)
+        VALUES (?, ?, 1, 0)
+        ON CONFLICT(discord_id) DO UPDATE SET
+            count = count + 1
+    ''', (discord_id, current_month))
+    conn.commit()
+    conn.close()
+    return get_user_requests(discord_id)[0]
+
+def add_bonus_requests(discord_id: str, amount: int):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    current_month = datetime.now().strftime("%Y-%m")
+    
+    c.execute('''
+        INSERT INTO request_counts (discord_id, month, count, bonus_requests)
+        VALUES (?, ?, 0, ?)
+        ON CONFLICT(discord_id) DO UPDATE SET
+            bonus_requests = bonus_requests + ?
+    ''', (discord_id, current_month, amount, amount))
+    conn.commit()
+    conn.close()
+    print(f"🎁 Бонусных запросов +{amount} для {discord_id}")
+
+def get_remaining_free_requests(discord_id: str) -> int:
+    if is_premium(discord_id):
+        return 999  # безлимит для премиум
+    used, bonus = get_user_requests(discord_id)
+    total_free = 5 + bonus
+    return max(0, total_free - used)
+
+def check_and_increment(discord_id: str) -> tuple:
+    """Возвращает (доступно_ли, осталось_запросов, использовано_запросов)"""
+    if is_premium(discord_id):
+        return True, 999, 0
+    
+    remaining = get_remaining_free_requests(discord_id)
+    if remaining <= 0:
+        return False, 0, 0
+    
+    used, bonus = get_user_requests(discord_id)
+    increment_requests(discord_id)
+    return True, remaining - 1, used + 1
 
 # ========== ПОЛНЫЙ УК ==========
 uk_sections = {
@@ -202,10 +336,20 @@ def smart_search(query: str, database: list):
                         found.append(law)
     return found
 
-# ========== ПРЕФИКСНЫЕ КОМАНДЫ (работают всегда) ==========
+# ========== ПРЕФИКСНЫЕ КОМАНДЫ ==========
 @bot.command(name="ук")
 async def uk_prefix(ctx, *, query: str):
-    """!ук убийство"""
+    user_id = str(ctx.author.id)
+    available, remaining, used = check_and_increment(user_id)
+    
+    if not available:
+        await ctx.send(
+            f"❌ У вас закончились бесплатные запросы! ({used}/5)\n"
+            f"🎁 Пригласите друга: `/реф` → +5 запросов\n"
+            f"💎 Купите премиум: @LawyerPayBot"
+        )
+        return
+    
     results = smart_search(query, uk_laws)
     if not results:
         await ctx.send(f"❌ Ничего не найдено по `{query}`")
@@ -221,7 +365,17 @@ async def uk_prefix(ctx, *, query: str):
 
 @bot.command(name="пк")
 async def pk_prefix(ctx, *, query: str):
-    """!пк задержание"""
+    user_id = str(ctx.author.id)
+    available, remaining, used = check_and_increment(user_id)
+    
+    if not available:
+        await ctx.send(
+            f"❌ У вас закончились бесплатные запросы! ({used}/5)\n"
+            f"🎁 Пригласите друга: `/реф` → +5 запросов\n"
+            f"💎 Купите премиум: @LawyerPayBot"
+        )
+        return
+    
     results = smart_search(query, pk_laws)
     if not results:
         await ctx.send(f"❌ Ничего не найдено по `{query}`")
@@ -236,7 +390,17 @@ async def pk_prefix(ctx, *, query: str):
 
 @bot.command(name="вопрос")
 async def ask_prefix(ctx, *, question: str):
-    """!вопрос Какое наказание за кражу?"""
+    user_id = str(ctx.author.id)
+    available, remaining, used = check_and_increment(user_id)
+    
+    if not available:
+        await ctx.send(
+            f"❌ У вас закончились бесплатные запросы! ({used}/5)\n"
+            f"🎁 Пригласите друга: `/реф` → +5 запросов\n"
+            f"💎 Купите премиум: @LawyerPayBot"
+        )
+        return
+    
     async with ctx.typing():
         answer = await ask_ai(question)
         embed = discord.Embed(title="🤖 ИИ-адвокат", description=answer, color=discord.Color.blue())
@@ -244,18 +408,58 @@ async def ask_prefix(ctx, *, question: str):
 
 @bot.command(name="статус")
 async def status_prefix(ctx):
-    """!статус — проверить подписку"""
     user_id = str(ctx.author.id)
+    used, bonus = get_user_requests(user_id)
+    total = 5 + bonus
+    remaining = get_remaining_free_requests(user_id)
+    
     if is_premium(user_id):
         expiry = get_premium_expiry(user_id)
-        await ctx.send(f"✅ Премиум активен до {expiry}")
+        await ctx.send(f"💎 Премиум активен до {expiry}\n📊 Запросов в месяце: {used}/{total} (безлимит)")
     else:
-        await ctx.send("❌ Премиум не активен. Купить: @LawyerPayBot")
+        await ctx.send(
+            f"📊 Статистика запросов:\n"
+            f"• Использовано: {used}/{total}\n"
+            f"• Осталось: {remaining}\n\n"
+            f"🎁 Пригласите друга: `/реф` → +5 запросов\n"
+            f"💎 Купите премиум: @LawyerPayBot"
+        )
+
+@bot.command(name="реф")
+async def ref_prefix(ctx):
+    user_id = str(ctx.author.id)
+    invited = get_invited_by(user_id)
+    if invited:
+        await ctx.send(f"❌ Вы уже были приглашены кем-то. Реферальную ссылку можно активировать только один раз.")
+        return
+    
+    count = get_referral_count(user_id)
+    code = f"!ref_{user_id}"
+    await ctx.send(
+        f"🌟 **Ваша реферальная ссылка:**\n"
+        f"`{code}`\n\n"
+        f"👥 Приглашено друзей: {count}\n"
+        f"🎁 За каждого друга вы получаете +14 дней премиума!\n"
+        f"🎁 Друг получает +5 бонусных запросов!\n\n"
+        f"Поделитесь кодом с другом, он напишет его в ЛС боту."
+    )
 
 # ========== СЛЭШ-КОМАНДЫ ==========
 @bot.tree.command(name="ук", description="Поиск по Уголовному кодексу")
 @app_commands.describe(query="Номер статьи или название")
 async def uk_cmd(interaction: discord.Interaction, query: str):
+    user_id = str(interaction.user.id)
+    available, remaining, used = check_and_increment(user_id)
+    
+    if not available:
+        await interaction.response.send_message(
+            f"❌ У вас закончились бесплатные запросы! ({used}/5)\n"
+            f"🎁 Пригласите друга: `/реф` → +5 запросов\n"
+            f"💎 Купите премиум: @LawyerPayBot",
+            ephemeral=True
+        )
+        return
+    
     await interaction.response.defer()
     results = smart_search(query, uk_laws)
     if not results:
@@ -277,6 +481,18 @@ async def uk_cmd(interaction: discord.Interaction, query: str):
 @bot.tree.command(name="пк", description="Поиск по Процессуальному кодексу")
 @app_commands.describe(query="Номер статьи или тема")
 async def pk_cmd(interaction: discord.Interaction, query: str):
+    user_id = str(interaction.user.id)
+    available, remaining, used = check_and_increment(user_id)
+    
+    if not available:
+        await interaction.response.send_message(
+            f"❌ У вас закончились бесплатные запросы! ({used}/5)\n"
+            f"🎁 Пригласите друга: `/реф` → +5 запросов\n"
+            f"💎 Купите премиум: @LawyerPayBot",
+            ephemeral=True
+        )
+        return
+    
     await interaction.response.defer()
     results = smart_search(query, pk_laws)
     if not results:
@@ -296,6 +512,18 @@ async def pk_cmd(interaction: discord.Interaction, query: str):
 @bot.tree.command(name="вопрос", description="Задать вопрос ИИ-адвокату")
 @app_commands.describe(question="Ваш вопрос")
 async def ask_cmd(interaction: discord.Interaction, question: str):
+    user_id = str(interaction.user.id)
+    available, remaining, used = check_and_increment(user_id)
+    
+    if not available:
+        await interaction.response.send_message(
+            f"❌ У вас закончились бесплатные запросы! ({used}/5)\n"
+            f"🎁 Пригласите друга: `/реф` → +5 запросов\n"
+            f"💎 Купите премиум: @LawyerPayBot",
+            ephemeral=True
+        )
+        return
+    
     await interaction.response.defer()
     answer = await ask_ai(question)
     embed = discord.Embed(title="⚖️ ИИ-адвокат", description=answer, color=discord.Color.purple())
@@ -304,11 +532,67 @@ async def ask_cmd(interaction: discord.Interaction, question: str):
 @bot.tree.command(name="статус", description="Проверить статус подписки")
 async def status_cmd(interaction: discord.Interaction):
     user_id = str(interaction.user.id)
+    used, bonus = get_user_requests(user_id)
+    total = 5 + bonus
+    remaining = get_remaining_free_requests(user_id)
+    
     if is_premium(user_id):
         expiry = get_premium_expiry(user_id)
-        embed = discord.Embed(title="💎 Статус подписки", description=f"✅ Премиум активен до {expiry}", color=discord.Color.green())
+        embed = discord.Embed(title="💎 Статус подписки", description=f"✅ Премиум активен до {expiry}\n📊 Запросов в месяце: {used}/{total} (безлимит)", color=discord.Color.green())
     else:
-        embed = discord.Embed(title="💎 Статус подписки", description="❌ Премиум не активен\nКупить: @LawyerPayBot", color=discord.Color.orange())
+        embed = discord.Embed(title="💎 Статус подписки", 
+            description=f"📊 Статистика запросов:\n• Использовано: {used}/{total}\n• Осталось: {remaining}\n\n🎁 Пригласите друга: `/реф` → +5 запросов\n💎 Купите премиум: @LawyerPayBot", 
+            color=discord.Color.orange())
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="реф", description="Реферальная программа")
+async def ref_cmd(interaction: discord.Interaction):
+    user_id = str(interaction.user.id)
+    invited = get_invited_by(user_id)
+    if invited:
+        await interaction.response.send_message("❌ Вы уже были приглашены кем-то. Реферальную ссылку можно активировать только один раз.", ephemeral=True)
+        return
+    
+    count = get_referral_count(user_id)
+    code = f"!ref_{user_id}"
+    embed = discord.Embed(title="🌟 Реферальная программа", 
+        description=f"**Ваша реферальная ссылка:**\n`{code}`\n\n👥 Приглашено друзей: {count}\n🎁 За каждого друга вы получаете +14 дней премиума!\n🎁 Друг получает +5 бонусных запросов!\n\nПоделитесь кодом с другом, он напишет его в ЛС боту.", 
+        color=discord.Color.gold())
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="give_premium", description="[АДМИН] Выдать премиум")
+@app_commands.describe(user="Пользователь", days="Количество дней")
+async def give_premium_cmd(interaction: discord.Interaction, user: discord.User, days: int = 30):
+    if not is_owner(interaction):
+        await interaction.response.send_message("❌ Нет прав! Только для владельца бота.", ephemeral=True)
+        return
+    
+    set_premium(str(user.id), days)
+    expiry = get_premium_expiry(str(user.id))
+    embed = discord.Embed(title="✅ Премиум выдан", description=f"{user.mention} получил премиум на {days} дней.\n📅 Действует до: {expiry}", color=discord.Color.green())
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="premium_list", description="[АДМИН] Список активных подписок")
+async def premium_list_cmd(interaction: discord.Interaction):
+    if not is_owner(interaction):
+        await interaction.response.send_message("❌ Нет прав! Только для владельца бота.", ephemeral=True)
+        return
+    
+    users = get_all_premium_users()
+    if not users:
+        await interaction.response.send_message("📭 Нет активных премиум-подписок.", ephemeral=True)
+        return
+    
+    embed = discord.Embed(title=f"💎 Активные премиум-подписки ({len(users)})", color=discord.Color.gold(), timestamp=datetime.now())
+    for discord_id, expires_at in users[:25]:
+        try:
+            user = await bot.fetch_user(int(discord_id))
+            name = user.name
+        except:
+            name = f"ID: {discord_id}"
+        expire_date = datetime.fromisoformat(expires_at)
+        days_left = (expire_date - datetime.now()).days
+        embed.add_field(name=name, value=f"📅 До: {expire_date.strftime('%d.%m.%Y')} ({days_left} дн.)\n🆔 `{discord_id}`", inline=False)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="справка", description="Все команды")
@@ -317,16 +601,57 @@ async def help_cmd(interaction: discord.Interaction):
     embed.add_field(name="⚖️ УК", value="`/ук убийство` или `!ук убийство`", inline=False)
     embed.add_field(name="📜 ПК", value="`/пк задержание` или `!пк задержание`", inline=False)
     embed.add_field(name="🤖 ИИ", value="`/вопрос` или `!вопрос`", inline=False)
-    embed.add_field(name="💎 Подписка", value="`/статус` или `!статус`", inline=False)
+    embed.add_field(name="💎 Премиум", value="`/статус` или `!статус`", inline=False)
+    embed.add_field(name="🌟 Рефералы", value="`/реф` или `!реф`", inline=False)
+    embed.add_field(name="👑 Админ", value="`/give_premium`, `/premium_list`", inline=False)
     await interaction.response.send_message(embed=embed)
 
-# ========== СОБЫТИЕ ЗАПУСКА С СИНХРОНИЗАЦИЕЙ ==========
+# ========== ОБРАБОТКА ЛИЧНЫХ СООБЩЕНИЙ (ДЛЯ РЕФЕРАЛОВ) ==========
+@bot.event
+async def on_message(message):
+    if message.author == bot.user:
+        return
+    
+    # Обработка реферального кода в ЛС
+    if isinstance(message.channel, discord.DMChannel):
+        text = message.content.strip()
+        if text.startswith("!ref_"):
+            inviter_id = text.replace("!ref_", "")
+            invited_id = str(message.author.id)
+            
+            if invited_id == inviter_id:
+                await message.reply("❌ Нельзя активировать свою собственную реферальную ссылку!")
+                return
+            
+            if get_invited_by(invited_id):
+                await message.reply("❌ Вы уже активировали чью-то реферальную ссылку ранее!")
+                return
+            
+            add_referral(invited_id, inviter_id)
+            
+            await message.reply(
+                f"✅ Реферальный код активирован!\n\n"
+                f"🎁 Вы получили +5 бонусных запросов!\n"
+                f"👑 Ваш друг получил +14 дней премиума!\n\n"
+                f"Ваш статус: `/статус`"
+            )
+            
+            try:
+                inviter = await bot.fetch_user(int(inviter_id))
+                if inviter:
+                    await inviter.send(f"🎉 Пользователь {message.author.name} активировал вашу реферальную ссылку! Вы получили +14 дней премиума!")
+            except:
+                pass
+            return
+    
+    await bot.process_commands(message)
+
+# ========== СОБЫТИЕ ЗАПУСКА ==========
 @bot.event
 async def on_ready():
     print(f"✅ Discord бот {bot.user} готов!")
     print(f"📜 УК: {len(uk_laws)} статей | ПК: {len(pk_laws)} статей")
     
-    # ПРИНУДИТЕЛЬНАЯ СИНХРОНИЗАЦИЯ СЛЭШ-КОМАНД
     try:
         synced = await bot.tree.sync()
         print(f"🔗 Синхронизировано {len(synced)} слэш-команд")
@@ -336,5 +661,4 @@ async def on_ready():
     Thread(target=run_web_server, daemon=True).start()
     print("🌐 Веб-сервер запущен")
 
-# ЗАПУСК
 bot.run(TOKEN)
