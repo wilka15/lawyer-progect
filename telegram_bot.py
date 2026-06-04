@@ -18,7 +18,7 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 ADMIN_IDS = [int(x.strip()) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()]
-STARS_PRICE = 100
+STARS_PRICE = 50
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
@@ -48,7 +48,7 @@ async def cmd_start(message: types.Message):
     await message.answer(
         "⚖️ *Lawyer Pay Bot*\n\n"
         "Оплатите премиум и получите безлимитные запросы в Discord боте!\n\n"
-        f"💰 Цена: {STARS_PRICE} Stars (~55 ₽)\n"
+        f"💰 Цена: {STARS_PRICE} Stars (~84 ₽)\n"
         f"📅 Срок: 30 дней\n\n"
         "После оплаты напишите в Discord боте `/status` — подписка будет активна!",
         parse_mode="Markdown",
