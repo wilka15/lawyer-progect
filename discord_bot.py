@@ -301,4 +301,20 @@ async def help_cmd(interaction: discord.Interaction):
 # Проверяем, что Flask-сервер запущен
 print(f"Flask должен слушать порт 8080 на 0.0.0.0")
 
+# Принудительная синхронизация команд при запуске
+@bot.event
+async def on_ready():
+    print(f"✅ Discord бот {bot.user} готов!")
+    print(f"📜 УК: {len(uk_laws)} статей | ПК: {len(pk_laws)} статей")
+    
+    # Принудительно синхронизируем команды
+    try:
+        synced = await bot.tree.sync()
+        print(f"🔗 Синхронизировано {len(synced)} слэш-команд")
+    except Exception as e:
+        print(f"❌ Ошибка синхронизации: {e}")
+    
+    Thread(target=run_web_server, daemon=True).start()
+    print("🌐 Веб-сервер запущен")
+
 bot.run(TOKEN)
