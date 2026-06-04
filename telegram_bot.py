@@ -1,18 +1,17 @@
 import asyncio
 import logging
 import os
-import re
 from datetime import datetime
 from threading import Thread
 
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import LabeledPrice, PreCheckoutQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import LabeledPrice, InlineKeyboardMarkup, InlineKeyboardButton, PreCheckoutQuery
 from aiogram.fsm.storage.memory import MemoryStorage
 from flask import Flask
 from dotenv import load_dotenv
 
-import database as db  # ← ОБЩАЯ БАЗА ДАННЫХ
+import database as db
 
 load_dotenv()
 
@@ -23,7 +22,7 @@ STARS_PRICE = 50
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
-# ===== ВЕБ-СЕРВЕР ДЛЯ RENDER =====
+# ===== ВЕБ-СЕРВЕР =====
 flask_app = Flask(__name__)
 
 @flask_app.route('/')
@@ -31,39 +30,77 @@ def health_check():
     return "✅ Telegram bot is alive!", 200
 
 def run_flask():
-    flask_app.run(host='0.0.0.0', port=8081)  # ← другой порт для Telegram
+    port = int(os.environ.get("PORT", 8081))
+    flask_app.run(host='0.0.0.0', port=port)
 
 Thread(target=run_flask, daemon=True).start()
-print("🌐 Веб-сервер Telegram запущен на порту 8081")
 
 # ===== КОМАНДЫ =====
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⭐ Купить Premium", callback_data="buy")],
+        [InlineKeyboardButton(text=f"⭐ Купить Premium ({STARS_PRICE} Stars)", callback_data="buy")],
+        [InlineKeyboardButton(text="🔗 Привязать Discord ID", callback_data="link")],
         [InlineKeyboardButton(text="📖 Инструкция", callback_data="help")]
     ])
     
     await message.answer(
         "⚖️ *Lawyer Pay Bot*\n\n"
-        "Оплатите премиум и получите безлимитные запросы в Discord боте!\n\n"
+        "💎 *Что нужно сделать:*\n"
+        "1️⃣ Привяжите ваш Discord ID\n"
+        "2️⃣ Купите Premium\n"
+        "3️⃣ После оплаты премиум активируется автоматически!\n\n"
         f"💰 Цена: {STARS_PRICE} Stars (~84 ₽)\n"
-        f"📅 Срок: 30 дней\n\n"
-        "После оплаты напишите в Discord боте `/status` — подписка будет активна!",
+        f"📅 Срок: 30 дней",
         parse_mode="Markdown",
         reply_markup=keyboard
     )
 
+@dp.callback_query(F.data == "link")
+async def link_prompt(callback: types.CallbackQuery):
+    await callback.message.answer(
+        "🔗 *Привязка Discord ID*\n\n"
+        "1. Откройте Discord\n"
+        "2. Настройки → Дополнительно → Режим разработчика\n"
+        "3. ПКМ по своему имени → Копировать ID\n"
+        "4. Введите: `/link 123456789012345678`",
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+@dp.message(Command("link"))
+async def link_account(message: types.Message):
+    args = message.text.split()
+    if len(args) != 2:
+        await message.answer("❌ Использование: `/link 123456789012345678`", parse_mode="Markdown")
+        return
+    
+    discord_id = args[1]
+    telegram_id = str(message.from_user.id)
+    
+    if db.is_premium(discord_id):
+        await message.answer(f"✅ Discord ID `{discord_id}` уже имеет активную подписку!", parse_mode="Markdown")
+    else:
+        db.link_accounts(discord_id, telegram_id)
+        await message.answer(f"✅ Discord ID `{discord_id}` привязан!\nТеперь купите Premium.", parse_mode="Markdown")
+
 @dp.callback_query(F.data == "buy")
 async def buy_callback(callback: types.CallbackQuery):
     user_id = callback.from_user.id
+    telegram_id = str(user_id)
+    
+    discord_id = db.get_discord_id_by_telegram(telegram_id)
+    if not discord_id:
+        await callback.message.answer("❌ *Сначала привяжите Discord ID!*\nИспользуйте `/link 123456789`", parse_mode="Markdown")
+        await callback.answer()
+        return
     
     await bot.send_invoice(
         chat_id=user_id,
         title="Premium доступ 30 дней",
-        description="Безлимитные запросы к УК и ПК",
-        payload=f"premium_{user_id}_{int(datetime.now().timestamp())}",
+        description=f"Активация для Discord ID: {discord_id}",
+        payload=f"premium_{discord_id}_{telegram_id}_{int(datetime.now().timestamp())}",
         provider_token="",
         currency="XTR",
         prices=[LabeledPrice(label="30 дней", amount=STARS_PRICE)],
@@ -75,11 +112,11 @@ async def buy_callback(callback: types.CallbackQuery):
 async def help_callback(callback: types.CallbackQuery):
     await callback.message.answer(
         "📖 *Инструкция:*\n\n"
-        "1️⃣ Нажмите «Купить Premium»\n"
-        "2️⃣ Оплатите Stars\n"
-        "3️⃣ **Напишите в Discord боте команду `/status`**\n\n"
-        "✅ Если оплата прошла, статус покажет активную подписку!\n\n"
-        "❓ Вопросы: @ваш_ник",
+        "1️⃣ `/link 123456789` — привязать Discord ID\n"
+        "2️⃣ Нажмите «Купить Premium»\n"
+        "3️⃣ Оплатите Stars\n"
+        "4️⃣ Premium активируется автоматически!\n\n"
+        "📌 *Discord ID:* Настройки Discord → Дополнительно → Режим разработчика → ПКМ по имени → Копировать ID",
         parse_mode="Markdown"
     )
     await callback.answer()
@@ -93,34 +130,30 @@ async def successful_payment(message: types.Message):
     payment = message.successful_payment
     user_name = message.from_user.full_name
     total_amount = payment.total_amount
+    payload = payment.invoice_payload
     
-    logging.info(f"💰 Платёж от {user_name}: {total_amount} Stars")
+    parts = payload.split('_')
+    if len(parts) >= 2:
+        discord_id = parts[1]
+    else:
+        await message.answer("❌ Ошибка: не удалось определить Discord ID")
+        return
+    
+    db.set_premium(discord_id, 30, str(message.from_user.id))
     
     await message.answer(
         f"✅ *Оплата прошла успешно!*\n\n"
-        f"⭐ Спасибо!\n\n"
-        f"📌 **Важно:** Ваш Discord ID не привязан автоматически.\n"
-        f"Напишите владельцу бота ваш **Discord ID**, чтобы активировать премиум.\n\n"
-        f"Или дождитесь ручной активации.",
+        f"⭐ Премиум активирован для Discord ID `{discord_id}` на 30 дней!\n"
+        f"💰 Оплачено: {total_amount} Stars",
         parse_mode="Markdown"
     )
     
-    # Уведомление админам
     for admin_id in ADMIN_IDS:
         try:
-            await bot.send_message(
-                admin_id,
-                f"🎉 Новая покупка!\n"
-                f"👤 {user_name}\n"
-                f"💰 {total_amount} Stars\n\n"
-                f"Спросите у пользователя его **Discord ID** и выполните в Discord боте:\n"
-                f"`/give @его_ник 30`",
-                parse_mode="Markdown"
-            )
+            await bot.send_message(admin_id, f"🎉 Новая покупка!\n👤 {user_name}\n🆔 Discord ID: {discord_id}\n💰 {total_amount} Stars")
         except:
             pass
 
-# ===== ЗАПУСК =====
 async def main():
     logging.basicConfig(level=logging.INFO)
     print("🚀 Telegram бот запущен!")
