@@ -10,6 +10,7 @@ from aiogram.types import LabeledPrice, InlineKeyboardMarkup, InlineKeyboardButt
 from aiogram.fsm.storage.memory import MemoryStorage
 from flask import Flask
 from dotenv import load_dotenv
+import aiohttp
 
 import database as db
 
@@ -129,20 +130,27 @@ async def get_balance(message: types.Message):
         await message.answer("❌ У вас нет прав для просмотра баланса.")
         return
     
-    try:
-        # Получаем баланс бота
-        star_balance = await bot.get_my_star_balance()
-        
-        # Формируем ответ
-        await message.answer(
-            f"💰 *Баланс Звёзд у бота:* **{star_balance}** ⭐\n\n"
-            f"📊 *Статистика:*\n"
-            f"• Цена подписки: {STARS_PRICE} Stars\n"
-            f"• Можно выдать ≈ {star_balance // STARS_PRICE} подписок",
-            parse_mode="Markdown"
-        )
-    except Exception as e:
-        await message.answer(f"❌ Ошибка получения баланса: {e}")
+    # Отправляем прямой запрос к Telegram API (работает всегда)
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/getMyStarBalance"
+    
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.post(url) as response:
+                result = await response.json()
+                
+                if result.get("ok"):
+                    star_balance = result["result"]["star_amount"]
+                    await message.answer(
+                        f"💰 *Баланс Звёзд у бота:* **{star_balance}** ⭐\n\n"
+                        f"📊 *Статистика:*\n"
+                        f"• Цена подписки: {STARS_PRICE} Stars\n"
+                        f"• Можно выдать ≈ {star_balance // STARS_PRICE} подписок",
+                        parse_mode="Markdown"
+                    )
+                else:
+                    await message.answer(f"❌ Ошибка: {result.get('description', 'Неизвестная ошибка')}")
+        except Exception as e:
+            await message.answer(f"❌ Ошибка соединения: {e}")
 
 @dp.pre_checkout_query()
 async def pre_checkout(query: PreCheckoutQuery):
@@ -181,7 +189,7 @@ async def successful_payment(message: types.Message):
 async def help_command(message: types.Message):
     await message.answer(
         "📚 *Доступные команды:*\n\n"
-        "/start — Главное меню\n"
+        "/start — Главное менú\n"
         "/link — Привязать Discord ID\n"
         "/balance — Баланс Stars (админ)\n"
         "/help — Помощь",
