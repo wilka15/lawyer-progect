@@ -1,5 +1,6 @@
 discord.py==2.3.2
 google-generativeai
-flask
 aiogram
-python-dotenv
+python-dotenv==1.0.0
+flask==3.0.0
+aiohttp==3.9.0
