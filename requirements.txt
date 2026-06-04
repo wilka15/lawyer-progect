@@ -1,5 +1,5 @@
 discord.py==2.3.2
 google-generativeai
 flask
-aiogram==3.13.1
+aiogram
 python-dotenv
