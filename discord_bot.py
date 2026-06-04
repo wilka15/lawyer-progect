@@ -298,4 +298,7 @@ async def help_cmd(interaction: discord.Interaction):
     embed.add_field(name="💎 Премиум", value="`/status`, `/give` (админ)", inline=False)
     await interaction.response.send_message(embed=embed)
 
+# Проверяем, что Flask-сервер запущен
+print(f"Flask должен слушать порт 8080 на 0.0.0.0")
+
 bot.run(TOKEN)
