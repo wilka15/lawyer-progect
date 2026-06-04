@@ -1,11 +1,9 @@
 import sqlite3
 from datetime import datetime, timedelta
-import os
 
 DB_PATH = "premium.db"
 
 def init_db():
-    """Создаёт таблицу если её нет"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
@@ -18,10 +16,9 @@ def init_db():
     ''')
     conn.commit()
     conn.close()
-    print("✅ База данных готова")
+    print("✅ База данных инициализирована")
 
 def set_premium(discord_id: str, days: int, telegram_id: str = None):
-    """Активировать премиум по Discord ID"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     expires_at = (datetime.now() + timedelta(days=days)).isoformat()
@@ -36,23 +33,19 @@ def set_premium(discord_id: str, days: int, telegram_id: str = None):
     
     conn.commit()
     conn.close()
-    print(f"✅ Премиум активирован для Discord ID {discord_id} на {days} дней")
+    print(f"✅ Премиум выдан Discord ID {discord_id} на {days} дней")
 
 def is_premium(discord_id: str) -> bool:
-    """Проверить активен ли премиум"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('SELECT expires_at FROM premium_users WHERE discord_id = ?', (discord_id,))
     row = c.fetchone()
     conn.close()
-    
     if row and row[0]:
-        expires_at = datetime.fromisoformat(row[0])
-        return expires_at > datetime.now()
+        return datetime.fromisoformat(row[0]) > datetime.now()
     return False
 
-def get_expiry(discord_id: str) -> str:
-    """Получить дату окончания подписки"""
+def get_premium_expiry(discord_id: str) -> str:
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('SELECT expires_at FROM premium_users WHERE discord_id = ?', (discord_id,))
@@ -60,8 +53,22 @@ def get_expiry(discord_id: str) -> str:
     conn.close()
     return row[0][:10] if row and row[0] else None
 
+def get_discord_id_by_telegram(telegram_id: str) -> str:
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT discord_id FROM premium_users WHERE telegram_id = ?', (telegram_id,))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+def link_accounts(discord_id: str, telegram_id: str):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('UPDATE premium_users SET telegram_id = ? WHERE discord_id = ?', (telegram_id, discord_id))
+    conn.commit()
+    conn.close()
+
 def get_all_premium() -> list:
-    """Список всех активных подписок (для админа)"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('SELECT discord_id, expires_at FROM premium_users WHERE expires_at > ?', (datetime.now().isoformat(),))
@@ -69,13 +76,4 @@ def get_all_premium() -> list:
     conn.close()
     return rows
 
-def remove_premium(discord_id: str):
-    """Удалить подписку (для админа)"""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('DELETE FROM premium_users WHERE discord_id = ?', (discord_id,))
-    conn.commit()
-    conn.close()
-
-# Создаём таблицу при импорте
 init_db()
