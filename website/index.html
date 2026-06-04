@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lawyer Helper — Юридический помощник</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 100%);
+            color: white;
+            text-align: center;
+            padding: 40px 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        h1 {
+            font-size: 48px;
+            background: linear-gradient(135deg, #fff, #5865F2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            margin: 10px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        .btn-discord {
+            background: #5865F2;
+            color: white;
+        }
+        .btn-telegram {
+            background: #26A5E4;
+            color: white;
+        }
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin: 40px 0;
+            flex-wrap: wrap;
+        }
+        .stat {
+            background: rgba(255,255,255,0.1);
+            padding: 20px;
+            border-radius: 16px;
+            min-width: 120px;
+        }
+        .stat-number {
+            font-size: 32px;
+            font-weight: bold;
+            color: #5865F2;
+        }
+        .stat-label {
+            font-size: 14px;
+            opacity: 0.7;
+        }
+        footer {
+            margin-top: 50px;
+            opacity: 0.5;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⚖️ Lawyer Helper</h1>
+        <p>Юридический помощник для Majestic RP</p>
+        
+        <div>
+            <a href="https://discord.com/oauth2/authorize?client_id=1327835741704167535&permissions=8&scope=bot%20applications.commands" class="btn btn-discord">➕ Добавить в Discord</a>
+            <a href="https://t.me/LawyerPayBot" class="btn btn-telegram">✉️ Telegram бот оплаты</a>
+        </div>
+        
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-number" id="users">-</div>
+                <div class="stat-label">пользователей</div>
+            </div>
+            <div class="stat">
+                <div class="stat-number" id="premium">-</div>
+                <div class="stat-label">активных подписок</div>
+            </div>
+        </div>
+        
+        <div>
+            <h3>📚 Команды Discord бота</h3>
+            <p><code>/ук убийство</code> — поиск по УК</p>
+            <p><code>/пк задержание</code> — поиск по ПК</p>
+            <p><code>/вопрос текст</code> — ИИ-консультация</p>
+            <p><code>/status</code> — проверить подписку</p>
+        </div>
+        
+        <div>
+            <h3>⭐ Telegram бот оплаты</h3>
+            <p>Оплатите 100 Stars (~55 ₽) и получите премиум на 30 дней</p>
+            <p>Ссылка: <a href="https://t.me/LawyerPayBot" style="color:#5865F2">@LawyerPayBot</a></p>
+        </div>
+        
+        <footer>
+            Бот создан для Majestic RP | По всем вопросам: @ваш_ник
+        </footer>
+    </div>
+    
+    <script>
+        async function fetchStats() {
+            try {
+                const response = await fetch('https://bot-lawyer.onrender.com/api/stats');
+                const data = await response.json();
+                document.getElementById('users').textContent = data.total_users || '0';
+                document.getElementById('premium').textContent = data.active_premium || '0';
+            } catch(e) {
+                console.log('Статистика временно недоступна');
+            }
+        }
+        fetchStats();
+        setInterval(fetchStats, 30000);
+    </script>
+</body>
+</html>
