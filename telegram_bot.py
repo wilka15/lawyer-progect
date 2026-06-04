@@ -22,7 +22,7 @@ STARS_PRICE = 50
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
-# ===== ВЕБ-СЕРВЕР =====
+# ===== ВЕБ-СЕРВЕР ДЛЯ RENDER =====
 flask_app = Flask(__name__)
 
 @flask_app.route('/')
@@ -34,6 +34,7 @@ def run_flask():
     flask_app.run(host='0.0.0.0', port=port)
 
 Thread(target=run_flask, daemon=True).start()
+print("🌐 Веб-сервер Telegram бота запущен")
 
 # ===== КОМАНДЫ =====
 
@@ -121,6 +122,28 @@ async def help_callback(callback: types.CallbackQuery):
     )
     await callback.answer()
 
+@dp.message(Command("balance"))
+async def get_balance(message: types.Message):
+    """Показать баланс Stars у бота (только для администратора)"""
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ У вас нет прав для просмотра баланса.")
+        return
+    
+    try:
+        # Получаем баланс бота
+        star_balance = await bot.get_my_star_balance()
+        
+        # Формируем ответ
+        await message.answer(
+            f"💰 *Баланс Звёзд у бота:* **{star_balance}** ⭐\n\n"
+            f"📊 *Статистика:*\n"
+            f"• Цена подписки: {STARS_PRICE} Stars\n"
+            f"• Можно выдать ≈ {star_balance // STARS_PRICE} подписок",
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        await message.answer(f"❌ Ошибка получения баланса: {e}")
+
 @dp.pre_checkout_query()
 async def pre_checkout(query: PreCheckoutQuery):
     await bot.answer_pre_checkout_query(query.id, ok=True)
@@ -153,6 +176,17 @@ async def successful_payment(message: types.Message):
             await bot.send_message(admin_id, f"🎉 Новая покупка!\n👤 {user_name}\n🆔 Discord ID: {discord_id}\n💰 {total_amount} Stars")
         except:
             pass
+
+@dp.message(Command("help"))
+async def help_command(message: types.Message):
+    await message.answer(
+        "📚 *Доступные команды:*\n\n"
+        "/start — Главное меню\n"
+        "/link — Привязать Discord ID\n"
+        "/balance — Баланс Stars (админ)\n"
+        "/help — Помощь",
+        parse_mode="Markdown"
+    )
 
 async def main():
     logging.basicConfig(level=logging.INFO)
