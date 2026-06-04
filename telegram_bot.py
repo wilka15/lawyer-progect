@@ -11,6 +11,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from flask import Flask
 from dotenv import load_dotenv
 import aiohttp
+import json
 
 import database as db
 
@@ -83,9 +84,23 @@ async def link_account(message: types.Message):
     
     if db.is_premium(discord_id):
         await message.answer(f"✅ Discord ID `{discord_id}` уже имеет активную подписку!", parse_mode="Markdown")
+        return
+    
+    db.link_accounts(discord_id, telegram_id)
+    
+    check = db.get_discord_id_by_telegram(telegram_id)
+    if check == discord_id:
+        await message.answer(
+            f"✅ Discord ID `{discord_id}` успешно привязан!\n"
+            f"Теперь нажмите «Купить Premium» для оплаты.",
+            parse_mode="Markdown"
+        )
     else:
-        db.link_accounts(discord_id, telegram_id)
-        await message.answer(f"✅ Discord ID `{discord_id}` привязан!\nТеперь купите Premium.", parse_mode="Markdown")
+        await message.answer(
+            f"❌ Ошибка привязки. Попробуйте ещё раз.\n"
+            f"Discord ID: {discord_id}\nTelegram ID: {telegram_id}",
+            parse_mode="Markdown"
+        )
 
 @dp.callback_query(F.data == "buy")
 async def buy_callback(callback: types.CallbackQuery):
@@ -93,8 +108,17 @@ async def buy_callback(callback: types.CallbackQuery):
     telegram_id = str(user_id)
     
     discord_id = db.get_discord_id_by_telegram(telegram_id)
+    
     if not discord_id:
-        await callback.message.answer("❌ *Сначала привяжите Discord ID!*\nИспользуйте `/link 123456789`", parse_mode="Markdown")
+        await callback.message.answer(
+            "❌ *Сначала привяжите Discord ID!*\n\n"
+            "Используйте команду:\n"
+            f"`/link` с вашим Discord ID\n\n"
+            "Как узнать Discord ID:\n"
+            "• Настройки Discord → Дополнительно → Режим разработчика\n"
+            "• ПКМ по своему имени → Копировать ID",
+            parse_mode="Markdown"
+        )
         await callback.answer()
         return
     
@@ -125,21 +149,20 @@ async def help_callback(callback: types.CallbackQuery):
 
 @dp.message(Command("balance"))
 async def get_balance(message: types.Message):
-    """Показать баланс Stars у бота (только для администратора)"""
     if message.from_user.id not in ADMIN_IDS:
         await message.answer("❌ У вас нет прав для просмотра баланса.")
         return
     
-    # Отправляем прямой запрос к Telegram API (работает всегда)
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/getMyStarBalance"
     
     async with aiohttp.ClientSession() as session:
         try:
             async with session.post(url) as response:
-                result = await response.json()
+                text = await response.text()
+                result = json.loads(text)
                 
                 if result.get("ok"):
-                    star_balance = result["result"]["star_amount"]
+                    star_balance = result.get("result", {}).get("star_amount", 0)
                     await message.answer(
                         f"💰 *Баланс Звёзд у бота:* **{star_balance}** ⭐\n\n"
                         f"📊 *Статистика:*\n"
@@ -148,9 +171,9 @@ async def get_balance(message: types.Message):
                         parse_mode="Markdown"
                     )
                 else:
-                    await message.answer(f"❌ Ошибка: {result.get('description', 'Неизвестная ошибка')}")
+                    await message.answer(f"❌ Ошибка API: {result.get('description', 'Неизвестная ошибка')}")
         except Exception as e:
-            await message.answer(f"❌ Ошибка соединения: {e}")
+            await message.answer(f"❌ Ошибка: {e}")
 
 @dp.pre_checkout_query()
 async def pre_checkout(query: PreCheckoutQuery):
@@ -175,7 +198,8 @@ async def successful_payment(message: types.Message):
     await message.answer(
         f"✅ *Оплата прошла успешно!*\n\n"
         f"⭐ Премиум активирован для Discord ID `{discord_id}` на 30 дней!\n"
-        f"💰 Оплачено: {total_amount} Stars",
+        f"💰 Оплачено: {total_amount} Stars\n\n"
+        f"Теперь в Discord боте используйте команду `/status` для проверки.",
         parse_mode="Markdown"
     )
     
@@ -189,7 +213,7 @@ async def successful_payment(message: types.Message):
 async def help_command(message: types.Message):
     await message.answer(
         "📚 *Доступные команды:*\n\n"
-        "/start — Главное менú\n"
+        "/start — Главное меню\n"
         "/link — Привязать Discord ID\n"
         "/balance — Баланс Stars (админ)\n"
         "/help — Помощь",
