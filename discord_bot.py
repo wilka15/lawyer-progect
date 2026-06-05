@@ -18,18 +18,27 @@ def health_check():
 
 @app.route('/api/stats')
 def api_stats():
+    """API для сайта — возвращает статистику в формате JSON"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
+    
+    # Общее количество пользователей
     c.execute('SELECT COUNT(*) FROM premium_users')
     total_users = c.fetchone()[0]
+    
+    # Количество активных подписок
     now = datetime.now().isoformat()
     c.execute('SELECT COUNT(*) FROM premium_users WHERE expires_at > ?', (now,))
     active_premium = c.fetchone()[0]
+    
+    # Всего запросов в этом месяце
     current_month = datetime.now().strftime("%Y-%m")
     c.execute('SELECT SUM(count) FROM request_counts WHERE month = ?', (current_month,))
     total_requests_row = c.fetchone()
     total_requests = total_requests_row[0] if total_requests_row[0] else 0
+    
     conn.close()
+    
     return jsonify({
         "total_users": total_users,
         "active_premium": active_premium,
@@ -176,7 +185,7 @@ def check_and_increment(discord_id: str) -> tuple:
     increment_requests(discord_id)
     return True, remaining - 1, used + 1
 
-# ========== ПОЛНЫЙ УК (ОБЩАЯ + ОСОБЕННАЯ ЧАСТЬ) ==========
+# ========== ПОЛНЫЙ УК ==========
 uk_laws = [
     {"article": "1", "title": "Уголовное законодательство", "penalty": "УК состоит из настоящего Кодекса", "stars": "📖", "note": ""},
     {"article": "1.2", "title": "Задачи Уголовного кодекса", "penalty": "Охрана прав и свобод, собственности, общественного порядка", "stars": "📖", "note": ""},
