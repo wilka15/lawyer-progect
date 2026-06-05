@@ -18,24 +18,18 @@ def health_check():
 
 @app.route('/api/stats')
 def api_stats():
-    """API для сайта — возвращает статистику в формате JSON"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    
     c.execute('SELECT COUNT(*) FROM premium_users')
     total_users = c.fetchone()[0]
-    
     now = datetime.now().isoformat()
     c.execute('SELECT COUNT(*) FROM premium_users WHERE expires_at > ?', (now,))
     active_premium = c.fetchone()[0]
-    
     current_month = datetime.now().strftime("%Y-%m")
     c.execute('SELECT SUM(count) FROM request_counts WHERE month = ?', (current_month,))
     total_requests_row = c.fetchone()
     total_requests = total_requests_row[0] if total_requests_row[0] else 0
-    
     conn.close()
-    
     return jsonify({
         "total_users": total_users,
         "active_premium": active_premium,
@@ -79,7 +73,7 @@ def init_db():
 
 init_db()
 
-# ========== ФУНКЦИИ ==========
+# ========== ФУНКЦИИ ПРЕМИУМА ==========
 def is_premium(discord_id: str) -> bool:
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -182,17 +176,136 @@ def check_and_increment(discord_id: str) -> tuple:
     increment_requests(discord_id)
     return True, remaining - 1, used + 1
 
-# ========== УК (сокращённый для примера, добавьте свои статьи) ==========
+# ========== ПОЛНЫЙ УК (ОСОБЕННАЯ ЧАСТЬ) ==========
 uk_laws = [
-    {"article": "6.1", "title": "Умышленное нанесение побоев", "penalty": "от 1 до 3 лет", "stars": "★★★", "note": ""},
-    {"article": "6.2", "title": "Убийство", "penalty": "от 2 до 4 лет", "stars": "★★★★", "note": ""},
+    {"article": "6.1", "title": "Умышленное нанесение побоев", "penalty": "от 1 до 3 лет лишения свободы", "stars": "★★★", "note": ""},
+    {"article": "6.2", "title": "Убийство", "penalty": "от 2 до 4 лет лишения свободы", "stars": "★★★★", "note": ""},
+    {"article": "6.3", "title": "Тяжкое убийство", "penalty": "от 4 до 5 лет лишения свободы", "stars": "★★★★★", "note": ""},
+    {"article": "6.4", "title": "Угроза убийством", "penalty": "от 2 до 3 лет, либо штраф $30.000-$50.000", "stars": "★★★", "note": ""},
+    {"article": "6.5", "title": "Воспрепятствование деятельности медработника", "penalty": "от 2 до 3 лет, либо штраф $5.000-$20.000", "stars": "★★★", "note": ""},
+    {"article": "7.1", "title": "Похищение человека", "penalty": "от 4 до 5 лет", "stars": "★★★★★", "note": ""},
+    {"article": "7.1.1", "title": "Незаконное лишение свободы", "penalty": "от 3 до 4 лет", "stars": "★★★★", "note": ""},
+    {"article": "7.2", "title": "Использование рабского труда", "penalty": "от 3 до 4 лет", "stars": "★★★★", "note": ""},
+    {"article": "7.3", "title": "Купля-продажа человека", "penalty": "от 3 до 4 лет", "stars": "★★★★", "note": ""},
+    {"article": "7.4", "title": "Клевета", "penalty": "от 2 до 3 лет, либо штраф $40.000-$80.000", "stars": "★★★", "note": ""},
+    {"article": "7.4.1", "title": "Клевета с обвинением в преступлении", "penalty": "от 2 до 3 лет, либо штраф $40.000-$80.000", "stars": "★★★", "note": ""},
+    {"article": "8.1", "title": "Изнасилование", "penalty": "от 3 до 4 лет", "stars": "★★★★", "note": ""},
+    {"article": "8.2", "title": "Понуждение к половому акту", "penalty": "от 2 до 3 лет", "stars": "★★★", "note": ""},
+    {"article": "8.3", "title": "Сексуальное домогательство", "penalty": "от 2 до 3 лет", "stars": "★★★", "note": ""},
+    {"article": "9.1", "title": "Воспрепятствование избирательным правам", "penalty": "от 3 до 5 лет", "stars": "★★★★★", "note": ""},
+    {"article": "9.2", "title": "Воспрепятствование прибытию сенатора", "penalty": "от 1 до 3 лет, либо штраф $20.000", "stars": "★★★", "note": ""},
+    {"article": "9.2.1", "title": "Срыв заседания Сената", "penalty": "от 1 до 3 лет", "stars": "★★★", "note": ""},
     {"article": "10.1", "title": "Кража", "penalty": "от 2 до 3 лет", "stars": "★★★", "note": ""},
+    {"article": "10.2", "title": "Мошенничество", "penalty": "от 2 до 3 лет", "stars": "★★★", "note": ""},
+    {"article": "10.2.1", "title": "Вымогательство", "penalty": "от 2 до 3 лет", "stars": "★★★", "note": ""},
+    {"article": "10.3", "title": "Грабеж", "penalty": "от 2 до 3 лет", "stars": "★★★", "note": ""},
+    {"article": "10.4", "title": "Разбой", "penalty": "от 2 до 4 лет", "stars": "★★★★", "note": ""},
+    {"article": "10.5", "title": "Угон авто", "penalty": "от 1 до 3 лет", "stars": "★★★", "note": ""},
+    {"article": "10.5.1", "title": "Угон гос. транспорта", "penalty": "от 3 до 4 лет", "stars": "★★★★", "note": ""},
+    {"article": "10.6", "title": "Уничтожение чужого имущества", "penalty": "от 1 до 3 лет, либо штраф $20.000-$60.000", "stars": "★★★", "note": ""},
+    {"article": "10.7", "title": "Уничтожение чужого имущества (альт.)", "penalty": "от 2 до 3 лет, либо штраф $30.000-$60.000", "stars": "★★★", "note": ""},
+    {"article": "10.8", "title": "Уничтожение госимущества", "penalty": "от 2 до 3 лет, либо штраф $40.000-$70.000", "stars": "★★★", "note": ""},
+    {"article": "10.9", "title": "Проникновение в жилище", "penalty": "от 3 до 4 лет", "stars": "★★★★", "note": ""},
+    {"article": "11.1", "title": "Предпринимательство без регистрации", "penalty": "от 1 до 3 лет, либо штраф $50.000-$100.000", "stars": "★★★", "note": ""},
+    {"article": "11.2", "title": "Принуждение к сделке", "penalty": "от 2 до 3 лет", "stars": "★★★", "note": ""},
+    {"article": "11.3", "title": "Уклонение от налогов", "penalty": "взыскание ×2 + от 3 до 5 лет", "stars": "★★★★★", "note": ""},
+    {"article": "11.4", "title": "Сокрытие средств от налогов", "penalty": "от 2 до 3 лет, либо взыскание ×2", "stars": "★★★", "note": ""},
+    {"article": "11.5", "title": "Ограничение конкуренции", "penalty": "от 2 до 4 лет", "stars": "★★★★", "note": ""},
+    {"article": "11.6", "title": "Финансовые махинации с госфинансированием", "penalty": "от 4 до 5 лет", "stars": "★★★★★", "note": ""},
+    {"article": "11.7", "title": "Финансирование экстремистской деятельности", "penalty": "от 4 до 5 лет", "stars": "★★★★★", "note": ""},
+    {"article": "12.1", "title": "Терроризм", "penalty": "от 4 до 5 лет", "stars": "★★★★★", "note": ""},
+    {"article": "12.1.1", "title": "Публичные призывы к терроризму", "penalty": "от 4 до 5 лет", "stars": "★★★★★", "note": ""},
+    {"article": "12.2", "title": "Ложное сообщение о теракте", "penalty": "от 3 до 4 лет", "stars": "★★★★", "note": ""},
+    {"article": "12.3", "title": "Неоднократные админ. правонарушения", "penalty": "от 1 до 2 лет, либо штраф $20.000", "stars": "★★", "note": ""},
+    {"article": "12.4", "title": "Возбуждение ненависти или вражды", "penalty": "от 4 до 5 лет", "stars": "★★★★★", "note": ""},
+    {"article": "12.5", "title": "Организация экстремистской организации", "penalty": "от 4 до 5 лет", "stars": "★★★★★", "note": ""},
+    {"article": "12.6", "title": "Нарушение порядка публичного мероприятия", "penalty": "от 2 до 3 лет", "stars": "★★★", "note": ""},
+    {"article": "12.6.1", "title": "Организация массовых беспорядков", "penalty": "от 3 до 5 лет", "stars": "★★★★★", "note": ""},
+    {"article": "12.7", "title": "Проникновение на закрытую территорию", "penalty": "от 1 до 3 лет, либо штраф $20.000-$50.000", "stars": "★★★", "note": ""},
+    {"article": "12.7.1", "title": "Проникновение на особо охраняемую территорию", "penalty": "от 4 до 5 лет, либо штраф $50.000-$100.000", "stars": "★★★★★", "note": ""},
+    {"article": "12.7.2", "title": "Проникновение на территорию оцепления", "penalty": "от 4 до 5 лет, либо штраф $50.000-$100.000", "stars": "★★★★★", "note": ""},
+    {"article": "12.8", "title": "Незаконное хранение оружия", "penalty": "от 3 до 4 лет, либо штраф $20.000-$60.000", "stars": "★★★★", "note": ""},
+    {"article": "12.8.1", "title": "Оружие гособразца у гражданских", "penalty": "от 3 до 5 лет", "stars": "★★★★★", "note": ""},
+    {"article": "12.8.2", "title": "Незаконное ношение гранат", "penalty": "от 4 до 5 лет, либо штраф $60.000-$100.000", "stars": "★★★★★", "note": ""},
+    {"article": "12.9", "title": "Незаконный оборот взрывчатки", "penalty": "от 4 до 5 лет", "stars": "★★★★★", "note": ""},
+    {"article": "12.10", "title": "Хищение оружия", "penalty": "от 3 до 4 лет", "stars": "★★★★", "note": ""},
+    {"article": "12.10.1", "title": "Хищение оружия со склада улик сотрудниками", "penalty": "от 4 до 5 лет", "stars": "★★★★★", "note": ""},
+    {"article": "12.11", "title": "Создание вооружённого формирования", "penalty": "от 4 до 5 лет", "stars": "★★★★★", "note": ""},
+    {"article": "12.12", "title": "Создание преступного сообщества (ОПГ)", "penalty": "5 лет", "stars": "★★★★★", "note": ""},
+    {"article": "12.13", "title": "Незаконное получение гостайны", "penalty": "от 4 до 5 лет", "stars": "★★★★★", "note": ""},
+    {"article": "12.14", "title": "Хулиганство", "penalty": "до 2 лет, либо штраф $30.000-$40.000", "stars": "★★", "note": ""},
+    {"article": "13.1", "title": "Кустарное производство наркотиков", "penalty": "от 2 до 4 лет", "stars": "★★★★", "note": ""},
+    {"article": "13.2", "title": "Сбыт наркотиков", "penalty": "от 3 до 5 лет", "stars": "★★★★★", "note": ""},
+    {"article": "13.3", "title": "Хранение наркотиков от 5 грамм", "penalty": "от 2 до 4 лет", "stars": "★★★★", "note": ""},
+    {"article": "13.4", "title": "Хранение наркотиков от 20 грамм", "penalty": "от 4 до 5 лет", "stars": "★★★★★", "note": ""},
+    {"article": "13.5", "title": "Наркотики у госслужащих", "penalty": "от 3 до 5 лет", "stars": "★★★★★", "note": ""},
+    {"article": "14.1", "title": "Дискредитация госорганов", "penalty": "от 2 до 5 лет", "stars": "★★★★★", "note": ""},
+    {"article": "14.2", "title": "Насильственный захват власти", "penalty": "от 4 до 5 лет", "stars": "★★★★★", "note": ""},
+    {"article": "14.2.1", "title": "Сепаратизм", "penalty": "от 4 до 5 лет", "stars": "★★★★★", "note": ""},
+    {"article": "14.3", "title": "Разглашение гостайны", "penalty": "от 3 до 4 лет", "stars": "★★★★", "note": ""},
+    {"article": "14.3.1", "title": "Незаконное получение гостайны", "penalty": "от 3 до 4 лет", "stars": "★★★★", "note": ""},
+    {"article": "15.1", "title": "Превышение должностных полномочий", "penalty": "от 3 до 5 лет, либо штраф $75.000-$100.000", "stars": "★★★★★", "note": ""},
+    {"article": "15.1.1", "title": "Злоупотребление должностными полномочиями", "penalty": "от 3 до 5 лет, либо штраф $50.000-$100.000", "stars": "★★★★★", "note": ""},
+    {"article": "15.2", "title": "Неисполнение приказа руководителя", "penalty": "от 2 до 4 лет, либо штраф $50.000-$70.000", "stars": "★★★★", "note": ""},
+    {"article": "15.3", "title": "Присвоение полномочий должностного лица", "penalty": "от 2 до 4 лет", "stars": "★★★★", "note": ""},
+    {"article": "15.4", "title": "Получение взятки", "penalty": "от 4 до 5 лет", "stars": "★★★★★", "note": ""},
+    {"article": "15.5", "title": "Дача взятки", "penalty": "от 4 до 5 лет", "stars": "★★★★★", "note": ""},
+    {"article": "15.5.1", "title": "Посредничество во взяточничестве", "penalty": "от 4 до 5 лет", "stars": "★★★★★", "note": ""},
+    {"article": "15.6", "title": "Халатность", "penalty": "от 2 до 5 лет, либо штраф $40.000-$70.000", "stars": "★★★★★", "note": ""},
+    {"article": "15.7", "title": "Деструктивное поведение госслужащего", "penalty": "от 1 до 3 лет, либо штраф $30.000-$70.000", "stars": "★★★", "note": ""},
+    {"article": "16.1", "title": "Вмешательство в деятельность суда", "penalty": "от 3 до 4 лет", "stars": "★★★★", "note": ""},
+    {"article": "16.1.2", "title": "Воспрепятствование работе прокурора", "penalty": "от 3 до 4 лет, либо штраф $50.000-$100.000", "stars": "★★★★", "note": ""},
+    {"article": "16.1.3", "title": "Неуважение к суду", "penalty": "от 2 до 5 лет, либо штраф $30.000-$50.000", "stars": "★★★★★", "note": ""},
+    {"article": "16.2", "title": "Угроза судье или прокурору", "penalty": "от 4 до 5 лет", "stars": "★★★★★", "note": ""},
+    {"article": "16.3", "title": "Привлечение невиновного", "penalty": "от 3 до 5 лет", "stars": "★★★★★", "note": ""},
+    {"article": "16.4", "title": "Незаконное задержание", "penalty": "от 3 до 5 лет", "stars": "★★★★★", "note": ""},
+    {"article": "16.5", "title": "Фальсификация доказательств", "penalty": "от 4 до 5 лет", "stars": "★★★★★", "note": ""},
+    {"article": "16.8", "title": "Ложные показания в суде", "penalty": "от 3 до 4 лет", "stars": "★★★★", "note": ""},
+    {"article": "16.9", "title": "Подкуп свидетеля", "penalty": "от 3 до 4 лет", "stars": "★★★★", "note": ""},
+    {"article": "16.10", "title": "Неисполнение судебного акта", "penalty": "от 2 до 4 лет, либо штраф $30.000-$70.000", "stars": "★★★★", "note": ""},
+    {"article": "16.10.1", "title": "Неисполнение судебных актов сотрудником", "penalty": "от 3 до 5 лет, либо штраф $40.000-$80.000", "stars": "★★★★★", "note": ""},
+    {"article": "16.11", "title": "Сокрытие улик", "penalty": "от 3 до 4 лет", "stars": "★★★★", "note": ""},
+    {"article": "16.12", "title": "Уклонение от расследования", "penalty": "от 3 до 4 лет", "stars": "★★★★", "note": ""},
+    {"article": "16.15", "title": "Побег из тюрьмы", "penalty": "от 1 до 5 лет", "stars": "★..★★★★★", "note": ""},
+    {"article": "16.16", "title": "Ложный донос", "penalty": "от 2 до 4 лет, либо штраф $40.000-$80.000", "stars": "★★★★", "note": ""},
+    {"article": "17.1", "title": "Посягательство на жизнь полицейского", "penalty": "от 4 до 5 лет", "stars": "★★★★★", "note": ""},
+    {"article": "17.2", "title": "Насилие в отношении полицейского", "penalty": "от 3 до 4 лет", "stars": "★★★★", "note": ""},
+    {"article": "17.3", "title": "Оскорбление полицейского", "penalty": "от 1 до 3 лет, либо штраф $20.000-$50.000", "stars": "★★★", "note": ""},
+    {"article": "17.4", "title": "Провокация госслужащего", "penalty": "штраф $5.000-$20.000 или до 3 лет", "stars": "★★★", "note": ""},
+    {"article": "17.5", "title": "Самоуправство", "penalty": "от 2 до 3 лет", "stars": "★★★", "note": ""},
+    {"article": "17.6", "title": "Неповиновение законному требованию", "penalty": "от 2 до 3 лет, либо штраф $20.000-$60.000", "stars": "★★★", "note": ""},
+    {"article": "17.7", "title": "Отказ от оплаты штрафа", "penalty": "от 2 до 3 лет, либо штраф $20.000-$60.000", "stars": "★★★", "note": ""},
+    {"article": "17.8", "title": "Подделка удостоверения", "penalty": "от 3 до 4 лет", "stars": "★★★★", "note": ""},
+    {"article": "17.9", "title": "Оскорбление человека в общественном месте", "penalty": "до 2 лет", "stars": "★★", "note": ""},
+    {"article": "17.10", "title": "Управление ТС с поддельной накладной", "penalty": "до 3 лет, либо штраф $50.000-$70.000", "stars": "★★★★", "note": ""},
+    {"article": "18.1", "title": "Неисполнение приказа начальника", "penalty": "от 2 до 3 лет, либо увольнение, либо штраф $10.000-$35.000", "stars": "★★★", "note": ""},
+    {"article": "18.2", "title": "Самовольное оставление части", "penalty": "от 2 до 3 лет, либо увольнение, либо штраф $10.000-$40.000", "stars": "★★★", "note": ""},
+    {"article": "18.3", "title": "Дезертирство", "penalty": "от 3 до 4 лет, либо увольнение, либо штраф $25.000-$60.000", "stars": "★★★★", "note": ""},
+    {"article": "18.4", "title": "Нарушение правил боевого дежурства", "penalty": "от 2 до 3 лет, либо увольнение, либо штраф $20.000-$35.000", "stars": "★★★", "note": ""},
+    {"article": "18.5", "title": "Уничтожение оружия", "penalty": "от 2 до 3 лет, либо увольнение, либо штраф $25.000-$50.000", "stars": "★★★", "note": ""},
+    {"article": "18.5.1", "title": "Уничтожение оружия по неосторожности", "penalty": "от 2 до 4 лет, либо увольнение, либо штраф $5.000-$35.000", "stars": "★★★★", "note": ""},
+    {"article": "18.6", "title": "Нарушение правил вождения военной техники", "penalty": "от 2 до 4 лет, либо увольнение, либо штраф $40.000-$70.000", "stars": "★★★★", "note": ""},
+    {"article": "19.1", "title": "Браконьерство", "penalty": "от 1 до 3 лет", "stars": "★★★", "note": ""},
+    {"article": "19.2", "title": "Жестокое обращение с животным", "penalty": "от 2 до 4 лет, либо штраф $30.000-$80.000", "stars": "★★★", "note": ""},
 ]
 
-# ========== ПК (сокращённый для примера) ==========
+# ========== ПК ==========
 pk_laws = [
+    {"article": "15", "title": "Срок задержания", "penalty": "Максимум 1 час", "stars": "⏰", "note": ""},
+    {"article": "16", "title": "Основания задержания", "penalty": "8 оснований", "stars": "🔍", "note": ""},
     {"article": "17", "title": "Порядок задержания", "penalty": "11 шагов", "stars": "📋", "note": ""},
-    {"article": "22", "title": "Права задержанного", "penalty": "Адвокат, молчание, звонок", "stars": "📜", "note": ""},
+    {"article": "19", "title": "Задержание госслужащего", "penalty": "Уведомить руководство и прокуратуру", "stars": "👮", "note": ""},
+    {"article": "20", "title": "Освобождение подозреваемого", "penalty": "7 оснований", "stars": "🔓", "note": ""},
+    {"article": "22", "title": "Права задержанного", "penalty": "5 прав", "stars": "📜", "note": ""},
+    {"article": "28", "title": "Личный обыск", "penalty": "Только при задержании", "stars": "🔎", "note": ""},
+    {"article": "29", "title": "Обыск транспорта", "penalty": "Обыск с ордером", "stars": "🚗", "note": ""},
+    {"article": "31", "title": "Видеофиксация", "penalty": "Обязательная запись", "stars": "🎥", "note": ""},
+    {"article": "33", "title": "Залог", "penalty": "от $25.000 + $25.000 за звезду", "stars": "💰", "note": ""},
+    {"article": "36", "title": "Применение силы", "penalty": "5 стадий", "stars": "💪", "note": ""},
+    {"article": "9", "title": "Обжалование", "penalty": "48 часов", "stars": "📋", "note": ""},
+    {"article": "12", "title": "Недопустимые доказательства", "penalty": "Показания до прав", "stars": "🚫", "note": ""},
+    {"article": "56", "title": "Допрос", "penalty": "Не более 1 часа", "stars": "👨‍⚖️", "note": ""},
+    {"article": "М7", "title": "Правило Миранды", "penalty": "Право молчать", "stars": "📢", "note": ""},
 ]
 
 # ========== ПОИСК ==========
@@ -208,52 +321,214 @@ def smart_search(query: str, database: list):
     for law in database:
         if law["title"].lower() in query_lower or query_lower in law["title"].lower():
             found.append(law)
+    if not found:
+        all_titles = [law["title"].lower() for law in database]
+        matches = get_close_matches(query_lower, all_titles, n=3, cutoff=0.5)
+        for match in matches:
+            for law in database:
+                if law["title"].lower() == match:
+                    found.append(law)
     return found
 
-# ========== КОМАНДЫ ==========
+# ========== ПРЕФИКСНЫЕ КОМАНДЫ ==========
+@bot.command(name="ук")
+async def uk_prefix(ctx, *, query: str):
+    user_id = str(ctx.author.id)
+    available, remaining, used = check_and_increment(user_id)
+    if not available:
+        await ctx.send(f"❌ У вас закончились бесплатные запросы! ({used}/5)\n🎁 Пригласите друга: `!реф` → +5 запросов\n💎 Купите премиум: @lawyer_pay_bot")
+        return
+    results = smart_search(query, uk_laws)
+    if not results:
+        await ctx.send(f"❌ Ничего не найдено по `{query}`")
+        return
+    if len(results) > 1:
+        await ctx.send(f"🔍 Найдено {len(results)} статей: {', '.join([r['article'] for r in results[:5]])}")
+        return
+    law = results[0]
+    embed = discord.Embed(title=f"⚖️ Ст {law['article']} УК", description=f"**{law['title']}**\n{law['stars']}", color=discord.Color.red())
+    embed.add_field(name="📝 Наказание", value=law['penalty'], inline=False)
+    await ctx.send(embed=embed)
+
+@bot.command(name="пк")
+async def pk_prefix(ctx, *, query: str):
+    user_id = str(ctx.author.id)
+    available, remaining, used = check_and_increment(user_id)
+    if not available:
+        await ctx.send(f"❌ У вас закончились бесплатные запросы! ({used}/5)\n🎁 Пригласите друга: `!реф` → +5 запросов\n💎 Купите премиум: @lawyer_pay_bot")
+        return
+    results = smart_search(query, pk_laws)
+    if not results:
+        await ctx.send(f"❌ Ничего не найдено по `{query}`")
+        return
+    if len(results) > 1:
+        await ctx.send(f"🔍 Найдено {len(results)} статей")
+        return
+    law = results[0]
+    embed = discord.Embed(title=f"📜 Ст {law['article']} ПК", description=f"**{law['title']}**\n{law['stars']}", color=discord.Color.green())
+    embed.add_field(name="📝 Содержание", value=law['penalty'], inline=False)
+    await ctx.send(embed=embed)
+
+@bot.command(name="статус")
+async def status_prefix(ctx):
+    user_id = str(ctx.author.id)
+    used, bonus = get_user_requests(user_id)
+    total = 5 + bonus
+    remaining = get_remaining_free_requests(user_id)
+    if is_premium(user_id):
+        expiry = get_premium_expiry(user_id)
+        await ctx.send(f"💎 Премиум активен до {expiry}\n📊 Запросов в месяце: {used}/{total} (безлимит)")
+    else:
+        await ctx.send(f"📊 Статистика:\n• Использовано: {used}/{total}\n• Осталось: {remaining}\n\n🎁 Пригласите друга: `!реф` → +5 запросов\n💎 Купите премиум: @lawyer_pay_bot")
+
+@bot.command(name="реф")
+async def ref_prefix(ctx):
+    user_id = str(ctx.author.id)
+    if get_invited_by(user_id):
+        await ctx.send(f"❌ Вы уже были приглашены")
+        return
+    count = get_referral_count(user_id)
+    code = f"!ref_{user_id}"
+    await ctx.send(f"🌟 **Ваша реферальная ссылка:** `{code}`\n👥 Приглашено: {count}\n🎁 За каждого друга вы получаете +14 дней премиума!")
+
+# ========== СЛЭШ-КОМАНДЫ ==========
 @bot.tree.command(name="ук", description="Поиск по Уголовному кодексу")
 @app_commands.describe(query="Номер статьи или название")
 async def uk_cmd(interaction: discord.Interaction, query: str):
+    user_id = str(interaction.user.id)
+    available, remaining, used = check_and_increment(user_id)
+    if not available:
+        await interaction.response.send_message(f"❌ У вас закончились бесплатные запросы! ({used}/5)\n💎 Купите премиум: @lawyer_pay_bot", ephemeral=True)
+        return
     await interaction.response.defer()
     results = smart_search(query, uk_laws)
     if not results:
         await interaction.followup.send(f"❌ Ничего не найдено по `{query}`")
         return
+    if len(results) > 1:
+        embed = discord.Embed(title=f"🔍 Найдено {len(results)} статей", color=discord.Color.orange())
+        for law in results[:5]:
+            embed.add_field(name=f"Ст.{law['article']} {law['stars']}", value=f"{law['title']}", inline=False)
+        await interaction.followup.send(embed=embed)
+        return
     law = results[0]
-    embed = discord.Embed(title=f"⚖️ Ст {law['article']} УК", description=law['title'], color=discord.Color.red())
+    embed = discord.Embed(title=f"⚖️ Ст {law['article']} УК", description=f"**{law['title']}**\n{law['stars']}", color=discord.Color.red())
     embed.add_field(name="📝 Наказание", value=law['penalty'], inline=False)
     await interaction.followup.send(embed=embed)
 
 @bot.tree.command(name="пк", description="Поиск по Процессуальному кодексу")
 @app_commands.describe(query="Номер статьи или тема")
 async def pk_cmd(interaction: discord.Interaction, query: str):
+    user_id = str(interaction.user.id)
+    available, remaining, used = check_and_increment(user_id)
+    if not available:
+        await interaction.response.send_message(f"❌ У вас закончились бесплатные запросы! ({used}/5)\n💎 Купите премиум: @lawyer_pay_bot", ephemeral=True)
+        return
     await interaction.response.defer()
     results = smart_search(query, pk_laws)
     if not results:
         await interaction.followup.send(f"❌ Ничего не найдено по `{query}`")
         return
+    if len(results) > 1:
+        embed = discord.Embed(title=f"🔍 Найдено {len(results)} статей", color=discord.Color.green())
+        for law in results[:5]:
+            embed.add_field(name=f"Ст.{law['article']} {law['stars']}", value=f"{law['title']}", inline=False)
+        await interaction.followup.send(embed=embed)
+        return
     law = results[0]
-    embed = discord.Embed(title=f"📜 Ст {law['article']} ПК", description=law['title'], color=discord.Color.green())
+    embed = discord.Embed(title=f"📜 Ст {law['article']} ПК", description=f"**{law['title']}**\n{law['stars']}", color=discord.Color.green())
     embed.add_field(name="📝 Содержание", value=law['penalty'], inline=False)
     await interaction.followup.send(embed=embed)
 
 @bot.tree.command(name="статус", description="Проверить статус подписки")
 async def status_cmd(interaction: discord.Interaction):
     user_id = str(interaction.user.id)
+    used, bonus = get_user_requests(user_id)
+    total = 5 + bonus
+    remaining = get_remaining_free_requests(user_id)
     if is_premium(user_id):
         expiry = get_premium_expiry(user_id)
-        embed = discord.Embed(title="💎 Статус", description=f"✅ Премиум активен до {expiry}", color=discord.Color.green())
+        embed = discord.Embed(title="💎 Статус", description=f"✅ Премиум активен до {expiry}\n📊 Запросов: {used}/{total} (безлимит)", color=discord.Color.green())
     else:
-        embed = discord.Embed(title="💎 Статус", description="❌ Премиум не активен\nКупить: @lawyer_pay_bot", color=discord.Color.orange())
+        embed = discord.Embed(title="💎 Статус", description=f"📊 Запросов: {used}/{total} осталось {remaining}\n\n🎁 Пригласите друга: `/реф`\n💎 Купите премиум: @lawyer_pay_bot", color=discord.Color.orange())
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="реф", description="Реферальная программа")
+async def ref_cmd(interaction: discord.Interaction):
+    user_id = str(interaction.user.id)
+    if get_invited_by(user_id):
+        await interaction.response.send_message("❌ Вы уже были приглашены", ephemeral=True)
+        return
+    count = get_referral_count(user_id)
+    code = f"!ref_{user_id}"
+    embed = discord.Embed(title="🌟 Реферальная программа", description=f"**Ваша ссылка:** `{code}`\n👥 Приглашено: {count}\n🎁 За друга: +14 дней премиума вам, +5 запросов другу", color=discord.Color.gold())
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="give_premium", description="[АДМИН] Выдать премиум")
+@app_commands.describe(user="Пользователь", days="Количество дней")
+async def give_premium_cmd(interaction: discord.Interaction, user: discord.User, days: int = 30):
+    if not is_owner(interaction):
+        await interaction.response.send_message("❌ Нет прав!", ephemeral=True)
+        return
+    set_premium(str(user.id), days)
+    embed = discord.Embed(title="✅ Премиум выдан", description=f"{user.mention} получил премиум на {days} дней.", color=discord.Color.green())
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="premium_list", description="[АДМИН] Список активных подписок")
+async def premium_list_cmd(interaction: discord.Interaction):
+    if not is_owner(interaction):
+        await interaction.response.send_message("❌ Нет прав!", ephemeral=True)
+        return
+    users = get_all_premium_users()
+    if not users:
+        await interaction.response.send_message("Нет активных подписок", ephemeral=True)
+        return
+    embed = discord.Embed(title=f"💎 Активные подписки ({len(users)})", color=discord.Color.gold())
+    for discord_id, expires_at in users[:20]:
+        try:
+            user = await bot.fetch_user(int(discord_id))
+            name = user.name
+        except:
+            name = f"ID: {discord_id}"
+        days_left = (datetime.fromisoformat(expires_at) - datetime.now()).days
+        embed.add_field(name=name, value=f"До: {expires_at[:10]} ({days_left} дн.)\n🆔 `{discord_id}`", inline=False)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="справка", description="Все команды")
 async def help_cmd(interaction: discord.Interaction):
     embed = discord.Embed(title="📚 Помощь", color=discord.Color.gold())
-    embed.add_field(name="⚖️ УК", value="`/ук убийство`", inline=False)
-    embed.add_field(name="📜 ПК", value="`/пк задержание`", inline=False)
-    embed.add_field(name="💎 Премиум", value="`/статус`", inline=False)
+    embed.add_field(name="⚖️ УК", value="`/ук убийство` или `!ук убийство`", inline=False)
+    embed.add_field(name="📜 ПК", value="`/пк задержание` или `!пк задержание`", inline=False)
+    embed.add_field(name="💎 Премиум", value="`/статус` или `!статус`", inline=False)
+    embed.add_field(name="🌟 Рефералы", value="`/реф` или `!реф`", inline=False)
+    embed.add_field(name="👑 Админ", value="`/give_premium`, `/premium_list`", inline=False)
     await interaction.response.send_message(embed=embed)
+
+@bot.event
+async def on_message(message):
+    if message.author == bot.user:
+        return
+    if isinstance(message.channel, discord.DMChannel):
+        text = message.content.strip()
+        if text.startswith("!ref_"):
+            inviter_id = text.replace("!ref_", "")
+            invited_id = str(message.author.id)
+            if invited_id == inviter_id:
+                await message.reply("❌ Нельзя активировать свою ссылку!")
+                return
+            if get_invited_by(invited_id):
+                await message.reply("❌ Вы уже активировали чью-то ссылку!")
+                return
+            add_referral(invited_id, inviter_id)
+            await message.reply(f"✅ Реферальный код активирован! Вы получили +5 бонусных запросов!\nВаш друг получил +14 дней премиума!")
+            try:
+                inviter = await bot.fetch_user(int(inviter_id))
+                if inviter:
+                    await inviter.send(f"🎉 Пользователь {message.author.name} активировал вашу реферальную ссылку! Вы получили +14 дней премиума!")
+            except:
+                pass
+            return
+    await bot.process_commands(message)
 
 @bot.event
 async def on_ready():
